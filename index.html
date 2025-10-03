@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz da Crisma Rosário</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --cor-principal: #A93226;
+            --cor-principal-hover: #8C2B20;
+            --cor-certo: #28a745;
+            --cor-errado: #dc3545;
+            --cor-selecionado-bg: #FADBD8;
+        }
+        body {
+            font-family: 'Poppins', sans-serif; background-color: var(--cor-principal); color: #333;
+            display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px 0;
+        }
+        .container {
+            background-color: white; border-radius: 15px; box-shadow: 0 5px 25px rgba(0, 0, 0, 0.3);
+            width: 90%; max-width: 600px; padding: 30px; text-align: center;
+        }
+        .hidden { display: none; }
+        .difficulty-btn {
+            background-color: var(--cor-principal); color: white; padding: 15px; border: none;
+            border-radius: 8px; font-size: 1.1em; cursor: pointer; margin: 10px;
+            transition: background-color 0.3s, transform 0.2s; width: 80%;
+        }
+        .difficulty-btn:hover { background-color: var(--cor-principal-hover); transform: scale(1.05); }
+        #quiz-screen { position: relative; }
+        #logo { max-width: 80px; height: auto; margin-bottom: 10px; }
+        #pastoral-title { color: var(--cor-principal); font-size: 1.8em; margin: 0; }
+        #progress-bar-container { width: 100%; height: 10px; background-color: #e0e0e0; border-radius: 5px; margin: 20px 0; overflow: hidden; }
+        #progress-bar { width: 0%; height: 100%; background-color: var(--cor-principal); transition: width 0.5s ease-in-out; }
+        #timer { position: absolute; top: 15px; right: 20px; font-size: 1.5em; font-weight: bold; color: var(--cor-principal); background-color: var(--cor-selecionado-bg); border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; }
+        #question-text { font-size: 1.4em; margin-bottom: 20px; min-height: 70px; }
+        .option-btn {
+            display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 15px;
+            margin: 10px 0; border: 2px solid #ddd; border-radius: 8px; background-color: #f9f9f9;
+            font-size: 1em; cursor: pointer; text-align: left; transition: all 0.3s;
+        }
+        .option-btn:hover:not(:disabled) { border-color: var(--cor-principal); transform: scale(1.02); }
+        .option-btn.correct { background-color: #d4edda; border-color: var(--cor-certo); color: #155724; }
+        .option-btn.wrong { background-color: #f8d7da; border-color: var(--cor-errado); color: #721c24; }
+        .option-btn .feedback-icon { font-weight: bold; font-size: 1.5em; }
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        .fade-in { animation: fadeIn 0.4s ease-in-out; }
+        #result-screen h2 { color: var(--cor-principal); }
+        #wrong-answers-list { list-style: none; padding: 0; margin-top: 20px; text-align: left; }
+        #wrong-answers-list li { background-color: #f9f9f9; border-radius: 8px; padding: 15px; margin-bottom: 10px; border-left: 5px solid var(--cor-errado); }
+        #wrong-answers-list strong { color: var(--cor-certo); }
+    </style>
+</head>
+<body>
+    <audio id="sound-correct" src="som_certo.mp3" preload="auto"></audio>
+    <audio id="sound-wrong" src="som_errado.mp3" preload="auto"></audio>
+
+    <div id="start-screen" class="container">
+        <img id="logo" src="logo.png" alt="Logo da Pastoral">
+        <h1 id="pastoral-title">Quiz da Crisma</h1>
+        <p>Escolha um nível de dificuldade para começar!</p>
+        <div id="difficulty-container">
+            <button class="difficulty-btn" onclick="startQuiz('facil')">Fácil</button>
+            <button class="difficulty-btn" onclick="startQuiz('medio')">Médio</button>
+            <button class="difficulty-btn" onclick="startQuiz('dificil')">Difícil</button>
+            <button class="difficulty-btn" onclick="startQuiz('todas')">Aleatório (Todas)</button>
+        </div>
+    </div>
+
+    <div id="quiz-screen" class="container hidden">
+        <div id="timer">20</div>
+        <div id="header"><h2 id="quiz-difficulty-title"></h2></div>
+        <div id="progress-bar-container"><div id="progress-bar"></div></div>
+        <div id="question-container">
+            <h2 id="question-text"></h2>
+            <div id="options-container"></div>
+        </div>
+    </div>
+
+    <div id="result-screen" class="container hidden">
+        <h2 id="result-title"></h2>
+        <p id="result-score"></p>
+        <div id="wrong-answers-container">
+            <h3>Perguntas que você errou:</h3>
+            <ul id="wrong-answers-list"></ul>
+        </div>
+        <button id="play-again-btn" class="difficulty-btn">Jogar Novamente</button>
+    </div>
+
+    <script>
+        let allQuestions = [];
+        const GAME_LENGTH = 10; // Define o número de perguntas por jogo
+
+        async function loadQuestions() {
+            try {
+                const response = await fetch('questions.json');
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                allQuestions = await response.json();
+                console.log("Banco de perguntas carregado com sucesso!");
+            } catch (error) {
+                console.error("Não foi possível carregar as perguntas:", error);
+                document.body.innerHTML = "<h1>Erro ao carregar o banco de perguntas. Verifique o arquivo questions.json e tente novamente.</h1>";
+            }
+        }
+
+        const TIME_PER_QUESTION = 20;
+        let currentQuestions = [];
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let wrongAnswers = [];
+        let timerInterval;
+
+        const startScreen = document.getElementById('start-screen');
+        const quizScreen = document.getElementById('quiz-screen');
+        const resultScreen = document.getElementById('result-screen');
+        const quizDifficultyTitle = document.getElementById('quiz-difficulty-title');
+        const questionTextElement = document.getElementById('question-text');
+        const optionsContainer = document.getElementById('options-container');
+        const progressBar = document.getElementById('progress-bar');
+        const timerElement = document.getElementById('timer');
+        const soundCorrect = document.getElementById('sound-correct');
+        const soundWrong = document.getElementById('sound-wrong');
+
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
+        function startQuiz(difficulty) {
+            startScreen.classList.add('hidden');
+            resultScreen.classList.add('hidden');
+            quizScreen.classList.remove('hidden');
+
+            quizDifficultyTitle.innerText = `Nível: ${difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}`;
+            
+            let filteredQuestions;
+            if (difficulty === 'todas') {
+                filteredQuestions = [...allQuestions];
+            } else {
+                filteredQuestions = allQuestions.filter(q => q.difficulty === difficulty);
+            }
+            
+            shuffleArray(filteredQuestions);
+
+            // NOVO: Lógica para limitar o jogo a 10 perguntas
+            if (filteredQuestions.length > GAME_LENGTH) {
+                currentQuestions = filteredQuestions.slice(0, GAME_LENGTH);
+            } else {
+                currentQuestions = filteredQuestions;
+            }
+            
+            currentQuestionIndex = 0;
+            score = 0;
+            wrongAnswers = [];
+            
+            showQuestion();
+        }
+
+        function showQuestion() {
+            resetState();
+            const currentQuestion = currentQuestions[currentQuestionIndex];
+            questionTextElement.innerText = currentQuestion.question;
+            
+            const shuffledOptions = [...currentQuestion.options];
+            shuffleArray(shuffledOptions);
+
+            shuffledOptions.forEach(option => {
+                const button = document.createElement('button');
+                button.innerHTML = `<span>${option}</span><span class="feedback-icon"></span>`;
+                button.classList.add('option-btn');
+                button.onclick = () => checkAnswer(option, button);
+                optionsContainer.appendChild(button);
+            });
+        }
+
+        function resetState() {
+            clearInterval(timerInterval);
+            optionsContainer.innerHTML = "";
+            updateProgressBar();
+            startTimer();
+            quizScreen.classList.remove('fade-in');
+            void quizScreen.offsetWidth;
+            quizScreen.classList.add('fade-in');
+        }
+
+        function startTimer() {
+            let timeLeft = TIME_PER_QUESTION;
+            timerElement.innerText = timeLeft;
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                timerElement.innerText = timeLeft;
+                if (timeLeft <= 0) {
+                    checkAnswer(null, null, true);
+                }
+            }, 1000);
+        }
+
+        function checkAnswer(selectedOption, selectedButton, timeUp = false) {
+            clearInterval(timerInterval);
+            Array.from(optionsContainer.children).forEach(button => button.disabled = true);
+            
+            const currentQuestion = currentQuestions[currentQuestionIndex];
+            const correct = selectedOption === currentQuestion.answer;
+
+            if (correct && !timeUp) {
+                score++;
+                soundCorrect.play();
+                selectedButton.classList.add('correct');
+                selectedButton.querySelector('.feedback-icon').innerHTML = ' &check;';
+            } else {
+                wrongAnswers.push({ question: currentQuestion.question, correctAnswer: currentQuestion.answer });
+                soundWrong.play();
+                if (selectedButton) {
+                    selectedButton.classList.add('wrong');
+                    selectedButton.querySelector('.feedback-icon').innerHTML = ' &times;';
+                }
+                Array.from(optionsContainer.children).forEach(button => {
+                    if (button.querySelector('span:first-child').innerText === currentQuestion.answer) {
+                        button.classList.add('correct');
+                    }
+                });
+            }
+            setTimeout(nextQuestion, 2000);
+        }
+
+        function nextQuestion() {
+            currentQuestionIndex++;
+            if (currentQuestionIndex < currentQuestions.length) {
+                showQuestion();
+            } else {
+                showResults();
+            }
+        }
+
+        function updateProgressBar() {
+            const progressPercent = (currentQuestionIndex / currentQuestions.length) * 100;
+            progressBar.style.width = `${progressPercent}%`;
+        }
+        
+        function showResults() {
+            quizScreen.classList.add('hidden');
+            resultScreen.classList.remove('hidden');
+
+            const scorePercent = Math.round((score / currentQuestions.length) * 100);
+            document.getElementById('result-score').innerText = `Você acertou ${score} de ${currentQuestions.length} perguntas (${scorePercent}%)!`;
+            
+            let resultTitle;
+            if(scorePercent === 100) resultTitle = "Perfeito! Mestre da Doutrina!";
+            else if (scorePercent >= 70) resultTitle = "Excelente! Você está no caminho certo!";
+            else if (scorePercent >= 50) resultTitle = "Bom trabalho! Continue estudando!";
+            else resultTitle = "Não desanime, a perseverança é uma virtude!";
+            document.getElementById('result-title').innerText = resultTitle;
+
+            const wrongAnswersList = document.getElementById('wrong-answers-list');
+            const wrongAnswersContainer = document.getElementById('wrong-answers-container');
+            wrongAnswersList.innerHTML = '';
+            if (wrongAnswers.length > 0) {
+                wrongAnswersContainer.classList.remove('hidden');
+                wrongAnswers.forEach(item => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `${item.question}<br><strong>Resposta correta: ${item.correctAnswer}</strong>`;
+                    wrongAnswersList.appendChild(li);
+                });
+            } else {
+                wrongAnswersContainer.classList.add('hidden');
+            }
+        }
+
+        document.getElementById('play-again-btn').onclick = () => {
+            resultScreen.classList.add('hidden');
+            startScreen.classList.remove('hidden');
+        };
+
+        document.addEventListener('DOMContentLoaded', (event) => {
+            loadQuestions();
+        });
+    </script>
+</body>
+</html>
